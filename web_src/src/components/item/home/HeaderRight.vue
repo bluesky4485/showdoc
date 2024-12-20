@@ -1,11 +1,6 @@
 <template>
   <div class="header-right float-right  mt-6 mr-10">
     <div>
-      <el-tooltip effect="dark" :content="$t('feedback')" placement="top">
-        <div @click="showFeedback = true" class="icon-item">
-          <i class="fas fa-headphones"></i>
-        </div>
-      </el-tooltip>
       <el-tooltip effect="dark" :content="$t('my_attachment')" placement="top">
         <div @click="showAttachment = true" class="icon-item">
           <i class="fas fa-folder-arrow-up"></i>
@@ -37,20 +32,6 @@
         </div>
       </el-tooltip>
       <el-tooltip
-        v-if="$lang == 'zh-cn'"
-        effect="dark"
-        content="客户端"
-        placement="top"
-      >
-        <div
-          @click="toOutLink('https://www.showdoc.com.cn/clients')"
-          class="icon-item"
-        >
-          <i class="fas fa-laptop-arrow-down"></i>
-        </div>
-      </el-tooltip>
-
-      <el-tooltip
         v-if="isAdmin"
         effect="dark"
         :content="$t('background')"
@@ -60,20 +41,6 @@
           <i class="fas fa-gear"></i>
         </div>
       </el-tooltip>
-      <div class="inline" v-if="$lang == 'zh-cn'">
-        <SDropdown
-          title="更多产品功能"
-          titleIcon="fas fa-ellipsis"
-          :menuList="menuList"
-          width="270px"
-        >
-          <div class="icon-item">
-            <span class="el-dropdown-link">
-              <i class="fas fa-ellipsis"></i>
-            </span>
-          </div>
-        </SDropdown>
-      </div>
     </div>
 
     <!-- 团队管理 -->

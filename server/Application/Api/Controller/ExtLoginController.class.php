@@ -16,7 +16,7 @@ class ExtLoginController extends BaseController
         $time = I("time");
         $token = I("token");
         $redirect = I("redirect");
-        $name = I("name"); 
+        $name = I("name");
 
         if ($time < (time() - 60)) {
             $this->sendError(10101, "已过期");
@@ -37,7 +37,7 @@ class ExtLoginController extends BaseController
             if($name){
                 D("User")->where(" uid = '$new_uid' ")->save(array("name" => $name));
             }
-            
+
         }
         if ($res) {
             // var_dump($res); return ;
@@ -133,9 +133,36 @@ class ExtLoginController extends BaseController
             try {
 
                 // Try to get an access token using the authorization code grant.
-                $accessToken = $provider->getAccessToken('authorization_code', [
-                    'code' => $_GET['code']
-                ]);
+//                $accessToken = $provider->getAccessToken('authorization_code', [
+//                    'code' => $_GET['code']
+//                ]);
+
+                $oCurl = curl_init();
+                curl_setopt($oCurl, CURLOPT_URL, $urlAccessToken);   //设置网址
+                curl_setopt($oCurl, CURLOPT_RETURNTRANSFER, 1);  //将curl_exec的结果返回
+                curl_setopt($oCurl, CURLOPT_SSL_VERIFYPEER, FALSE);
+                curl_setopt($oCurl, CURLOPT_SSL_VERIFYHOST, FALSE);
+                curl_setopt($oCurl, CURLOPT_HEADER, 0);         //是否输出返回头信息
+                $basicAuth = base64_encode("$clientId:$clientSecret");
+
+                // 设置请求头
+                $headers = [
+                    "Authorization: Basic {$basicAuth}",  // 设置 Bearer Token
+                    "HzTech-Requested-With: HzTechHttpRequest",
+                    "User-Agent: showdoc",                           // 设置用户代理
+                    "Accept: application/json",                      // 设置响应数据类型
+                ];
+                curl_setopt($oCurl, CURLOPT_HTTPHEADER, $headers);   // 将自定义头部信息添加到请求中
+                $postFields = [
+                    'grant_type'    => 'authorization_code',
+                    'code'          => $_GET['code'],
+                    'redirect_uri'  => $redirectUri,
+                ];
+                curl_setopt($oCurl, CURLOPT_POST, 1);                         // 设置 POST 请求
+                curl_setopt($oCurl, CURLOPT_POSTFIELDS, http_build_query($postFields)); // 设置 POST 数据
+                $accessToken = curl_exec($oCurl);   //执行
+                curl_close($oCurl);          //关闭会话
+
 
                 // We have an access token, which we may use in authenticated
                 // requests against the service provider's API.
@@ -144,44 +171,104 @@ class ExtLoginController extends BaseController
                 //echo 'Expired in: ' . $accessToken->getExpires() . "<br>";
                 // echo 'Already expired? ' . ($accessToken->hasExpired() ? 'expired' : 'not expired') . "<br>";
 
-                $access_token_string = $accessToken->getToken();
-                $user_info_url = $urlUserInfo . "?access_token=" . $access_token_string;
-                $oCurl = curl_init();   //初始化curl，
-                curl_setopt($oCurl, CURLOPT_URL, $user_info_url);   //设置网址
-                curl_setopt($oCurl, CURLOPT_RETURNTRANSFER, 1);  //将curl_exec的结果返回
-                curl_setopt($oCurl, CURLOPT_SSL_VERIFYPEER, FALSE);
-                curl_setopt($oCurl, CURLOPT_SSL_VERIFYHOST, FALSE);
-                curl_setopt($oCurl, CURLOPT_HEADER, 0);         //是否输出返回头信息
-                curl_setopt($oCurl, CURLOPT_HTTPHEADER, array("Authorization: bearer {$access_token_string}", "user-agent: showdoc","accept:application/json"));
-                $res = curl_exec($oCurl);   //执行
-                curl_close($oCurl);          //关闭会话
-                $res_array = json_decode($res, true);
+                $res_array = json_decode($accessToken, true);
+
                 if ($res_array) {
                     $username = '';
+                    // 登录的token
+                    $hz_token = '';
+                    // token的前缀
+                    $token_type = '';
+                    // 部门集合
+                    $deptList = '';
+                    if ($res_array['access_token']) {
+                        $hz_token = $res_array['access_token'];
+                    }
+                    if ($res_array['token_type']) {
+                        $token_type = $res_array['token_type'];
+                    }
+                    if ($res_array['dept_id']) {
+                        $deptList = $res_array['dept_id'];
+                    }
+
                     if ($res_array['preferred_username']) {
                         $username = $res_array['preferred_username'];
                     }
                     if ($res_array['name']) {
                         $username = $res_array['name'];
                     }
-                    if ($res_array['username']) {
-                        $username = $res_array['username'];
+                    if ($res_array['user_name']) {
+                        $username = $res_array['user_name'];
                     }
                     if ($res_array['login']) {
                         $username = $res_array['login'];
                     }
                     if (!$username) {
-                        echo "返回信息中无法获取用户名。返回的内容如下：" . $res;
+                        echo "返回信息中无法获取用户名。返回的内容如下：" . $res_array['msg'];
                         return;
                     }
                     $info = D("User")->where("username='%s'", array($username))->find();
                     if (!$info) {
                         D("User")->register($username, md5($username . time() . rand()));
                         $info = D("User")->where("username='%s'", array($username))->find();
-                        if($res_array['name']){
-                            D("User")->where("username='%s'", array($username))->save(array("name" =>$res_array['name']));
+                        if($res_array['nick_name']){
+                            D("User")->where("username='%s'", array($username))->save(array("name" =>$res_array['nick_name']));
                         }
-                        
+                        // 创建一个全部用户所在的team,用于给所有人权限
+                        $allTeam = D("Team")->where("team_name='%s'",array('汇智全体人员'))->find();
+                        $userAdmin = D("User")->where("username='%s'", array('admin'))->find();
+                        if (!$allTeam) {
+                            // 设置管理员
+                            $teamData['username'] = 'admin';
+                            $teamData['uid'] = $userAdmin['uid'];
+                            $teamData['team_name'] = '汇智全体人员';
+                            $teamData['addtime'] = time();
+                            $id = D("Team")->add($teamData);
+                            $this->saveTeamMember($userAdmin['uid'],'admin',$id,2);
+                        }else {
+                            $this->saveTeamMember($info['uid'],$info['username'],$allTeam['id'],1);
+                        }
+
+                        // 使用逗号分隔字符串
+                        $result = explode(",", $deptList);
+
+                        // 遍历数组  获取该用户的顶级部门
+                        foreach ($result as $value) {
+                            $deptCurl = curl_init();
+                            curl_setopt($deptCurl, CURLOPT_URL, $oauth2_form['protocol'] . "://" . $oauth2_form['host'] . "/api/hztech-system/dept/getTopParentDept?id=" . $value);   //设置网址
+                            curl_setopt($deptCurl, CURLOPT_RETURNTRANSFER, 1);  //将curl_exec的结果返回
+                            curl_setopt($deptCurl, CURLOPT_SSL_VERIFYPEER, FALSE);
+                            curl_setopt($deptCurl, CURLOPT_SSL_VERIFYHOST, FALSE);
+                            curl_setopt($deptCurl, CURLOPT_HEADER, 0);         //是否输出返回头信息
+                            // 设置请求头
+                            $headers = [
+                                "hztech-auth: {$token_type} ${hz_token}",   //  Token
+                                "HzTech-Requested-With: HzTechHttpRequest",
+                                "User-Agent: showdoc",                     // 自定义用户代理
+                                "Accept: application/json"                // 接受 JSON 响应
+                            ];
+                            curl_setopt($deptCurl, CURLOPT_HTTPHEADER, $headers);
+                            // 执行 cURL 请求
+                            $response = curl_exec($deptCurl);
+                            curl_close($deptCurl);    //关闭会话
+
+                            $dept_array = json_decode($response, true);
+
+                            $deptTeam = D("Team")->where("team_name='%s'",array($dept_array['data']['deptName']))->find();
+                            if (!$deptTeam) {
+                                $deptReamData['username'] = 'admin';
+                                $deptReamData['uid'] = $userAdmin['uid'];
+                                $deptReamData['team_name'] = $dept_array['data']['deptName'];
+                                $deptReamData['addtime'] = time();
+                                $id = D("Team")->add($deptReamData);
+                                $this->saveTeamMember($userAdmin['uid'],'admin',$id,2);
+                                if ($userAdmin['username'] !== 'admin'){
+                                    $this->saveTeamMember($info['uid'],$info['username'],$id,1);
+                                }
+                            }else{
+                                $this->saveTeamMember($info['uid'],$info['username'],$deptTeam['id'],1);
+                            }
+                        }
                     }
 
                     D("User")->setLastTime($info['uid']);
@@ -197,7 +284,7 @@ class ExtLoginController extends BaseController
                         header("location:../web/#/item/index");
                     }
                 } else {
-                    echo "登录成功但无法获取用户信息";
+                    echo "登录成功但无法获取用户信息" . $res_array;
                 }
             } catch (\League\OAuth2\Client\Provider\Exception\IdentityProviderException $e) {
 
@@ -205,6 +292,35 @@ class ExtLoginController extends BaseController
                 exit($e->getMessage());
             }
         }
+    }
+
+    // 保存用户跟团队的关联关系
+    protected function saveTeamMember($uid,$username, $team_id,$team_member_group_id)
+    {
+        $data = array();
+        $data['team_id'] = $team_id;
+        $data['member_uid'] = $uid;
+        $data['member_username'] = $username;
+        $data['team_member_group_id'] = $team_member_group_id; //默认添加的权限为1，即编辑权限
+        $data['addtime'] = time();
+        $id = D("TeamMember")->add($data);
+
+        //检查该团队已经加入了哪些项目
+        $teamItems = D("TeamItem")->where("  team_id = '$team_id' ")->select();
+        if ($teamItems) {
+            foreach ($teamItems as $key2 => $value2) {
+                $data = array(
+                    "team_id" => $team_id,
+                    "member_uid" => $uid,
+                    "member_username" => $username,
+                    "item_id" => $value2['item_id'],
+                    "member_group_id" => 1, //默认添加的权限为1，即编辑权限
+                    "addtime" => time()
+                );
+                D("TeamItemMember")->add($data);
+            }
+        }
+
     }
 
 

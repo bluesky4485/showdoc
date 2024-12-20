@@ -75,17 +75,6 @@
             </div>
           </div>
         </div>
-        <div v-if="$lang == 'zh-cn'" class="left-bottom-bar">
-          <div class="content">
-            <i class="far fa-fire "></i>
-            调试API并自动生成文档
-            <a
-              class="text-link ml-2"
-              @click="toOutLink('https://www.showdoc.com.cn/runapi')"
-              >试试</a
-            >
-          </div>
-        </div>
       </div>
       <div class="right-side align-top  inline-block">
         <div class="search-box-div">
